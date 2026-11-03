@@ -81,10 +81,10 @@ class ErrorsTest < Minitest::Test
   end
 
   def test_server_errors_and_proxy_pages
-    error = send_error(502, "<html><body><h1>502 Bad Gateway</h1><p>nginx &amp; co</p></body></html>")
+    error = send_error(503, "<html><body><h1>503 Service Unavailable</h1><p>nginx &amp; co</p></body></html>")
 
     assert_instance_of SMSTunnel::ServerError, error
-    assert_equal "502 Bad Gateway nginx & co", error.message
+    assert_equal "503 Service Unavailable nginx & co", error.message
     assert_kind_of String, error.body
   end
 

@@ -31,7 +31,7 @@ class SendTextJobTest < RailsTestCase
 
   test "a retry after a server error carries the same idempotency key" do
     stub_request(:post, url("/api/v1/sms/send"))
-      .to_return({ status: 502, body: "Bad Gateway" }, { status: 200, body: send_answer, headers: JSON_HEADERS })
+      .to_return({ status: 503, body: "Unavailable" }, { status: 200, body: send_answer, headers: JSON_HEADERS })
 
     perform_enqueued_jobs do
       SMSTunnel::SendTextJob.perform_later("+14155550123", "Your table is ready.")
