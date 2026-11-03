@@ -31,4 +31,10 @@ module HTTPHelper
   end
 
   def sent_body(request) = JSON.parse(request.body)
+
+  # A clean slate for every test, whatever the run order: no stub or recorded request left by another test.
+  def before_setup
+    super
+    WebMock.reset!
+  end
 end
