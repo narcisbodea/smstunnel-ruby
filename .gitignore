@@ -1,0 +1,17 @@
+# Ruby and Bundler
+/.bundle/
+/vendor/
+/pkg/
+/tmp/
+/coverage/
+/doc/
+/.yardoc/
+*.gem
+Gemfile.lock
+/gemfiles/*.lock
+
+# Never commit keys
+.env
+*.key.json
+local-test-key.json
+master.key

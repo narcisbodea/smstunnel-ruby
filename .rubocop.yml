@@ -1,0 +1,62 @@
+plugins:
+  - rubocop-minitest
+  - rubocop-rake
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "tmp/**/*"
+    - "vendor/**/*"
+    - "pkg/**/*"
+
+Layout/LineLength:
+  Max: 120
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
+
+# Short hash keys read better spelled out in a public API.
+Style/HashSyntax:
+  EnforcedShorthandSyntax: either
+
+Style/Documentation:
+  Exclude:
+    - "test/**/*"
+
+Metrics/AbcSize:
+  Max: 25
+  Exclude:
+    - "test/**/*"
+
+Metrics/MethodLength:
+  Max: 25
+  Exclude:
+    - "test/**/*"
+
+Metrics/ClassLength:
+  Max: 250
+  Exclude:
+    - "test/**/*"
+
+Metrics/BlockLength:
+  Exclude:
+    - "test/**/*"
+    - "smstunnel.gemspec"
+    - "lib/smstunnel/results.rb"
+
+# results.rb is a list of small immutable value classes.
+Metrics/ModuleLength:
+  Exclude:
+    - "lib/smstunnel/results.rb"
+
+Metrics/ParameterLists:
+  Max: 6
+  CountKeywordArgs: false
+
+Minitest/MultipleAssertions:
+  Max: 12

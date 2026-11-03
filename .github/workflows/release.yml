@@ -1,0 +1,42 @@
+# Pushes the gem to RubyGems.org with Trusted Publishing: RubyGems.org trusts this workflow, in this repository, in
+# the `rubygems` environment. No API key is stored anywhere. See PUBLISHING.md.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Push smstunnel to RubyGems.org
+    runs-on: ubuntu-latest
+    environment:
+      name: rubygems
+      url: https://rubygems.org/gems/smstunnel
+    permissions:
+      # `rake release` pushes the git tag only when it is missing; a published release already has it, so reading
+      # is enough (a missing tag makes the run stop before anything is pushed).
+      contents: read
+      id-token: write # lets RubyGems.org check that this run is the trusted publisher
+    env:
+      BUNDLE_WITHOUT: rails
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ruby
+          bundler-cache: true
+      - run: bundle exec rake test:unit rubocop
+      - name: The release tag matches the gem version
+        run: |
+          version="$(ruby -Ilib -e 'require "smstunnel/version"; print SMSTunnel::VERSION')"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The release tag $GITHUB_REF_NAME does not match the gem version $version."
+            exit 1
+          fi
+      - uses: rubygems/release-gem@v1

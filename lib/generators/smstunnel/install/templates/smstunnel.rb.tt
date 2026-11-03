@@ -1,0 +1,17 @@
+# SMSTunnel sends texts from your own Android phone, from your own number.
+# Guide: https://github.com/narcisbodea/smstunnel-ruby#readme
+SMSTunnel.configure do |config|
+  # The API key of your SMSTunnel app (https://dashboard.smstunnel.io/apps). Put it in your credentials
+  # (<%= edit_command %>: smstunnel: api_key: ...) or in the SMSTUNNEL_API_KEY environment variable.
+  config.api_key = Rails.application.credentials.dig(:smstunnel, :api_key).presence || ENV["SMSTUNNEL_API_KEY"]
+
+  # Optional: the phone that sends the texts (Phones → copy its ID). Without it, SMSTunnel picks one of yours.
+  config.device_id = Rails.application.credentials.dig(:smstunnel, :device_id).presence || ENV["SMSTUNNEL_DEVICE_ID"]
+
+  # Optional: completes numbers written without + or 00, e.g. "+40".
+  # config.default_country_code = "+40"
+
+  # Seconds to wait for an answer (default 30) and to connect (default 10).
+  # config.timeout = 30
+  # config.open_timeout = 10
+end

@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Ruby ${{ matrix.ruby }}, Rails ${{ matrix.rails }}, Noticed ${{ matrix.noticed }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { ruby: "3.2", rails: "7.2", noticed: "~> 2.9" }
+          - { ruby: "3.3", rails: "7.2", noticed: "~> 3.1" }
+          - { ruby: "3.3", rails: "8.0", noticed: "~> 3.1" }
+          - { ruby: "3.4", rails: "8.0", noticed: "~> 2.9" }
+          - { ruby: "3.4", rails: "8.1", noticed: "~> 3.1" }
+          - { ruby: "4.0", rails: "8.1", noticed: "~> 3.1" }
+    env:
+      RAILS_VERSION: ${{ matrix.rails }}
+      NOTICED_VERSION: ${{ matrix.noticed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+      - run: bundle exec rake test
+
+  standard-library-only:
+    name: Client without Rails (Ruby ${{ matrix.ruby }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.2", "4.0"]
+    env:
+      BUNDLE_WITHOUT: rails
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+      - run: bundle exec rake test:unit
+
+  lint:
+    name: RuboCop and the packaged gem
+    runs-on: ubuntu-latest
+    env:
+      BUNDLE_WITHOUT: rails
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+      - run: bundle exec rubocop
+      - run: gem build smstunnel.gemspec --strict
+      - name: The gem ships lib/, the README, the changelog and the license, and nothing else
+        run: |
+          gem spec smstunnel-*.gem files --yaml | sed -n 's/^- //p' > files.txt
+          cat files.txt
+          if grep -Ev '^(lib/|README\.md$|CHANGELOG\.md$|LICENSE$)' files.txt; then
+            echo "::error::Unexpected files in the gem."
+            exit 1
+          fi
+          gem spec smstunnel-*.gem runtime_dependencies --yaml | grep -qx -- '--- \[\]' || {
+            echo "::error::The gem must not have runtime dependencies."
+            exit 1
+          }
