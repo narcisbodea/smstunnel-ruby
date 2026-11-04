@@ -17,8 +17,7 @@ jobs:
       name: rubygems
       url: https://rubygems.org/gems/smstunnel
     permissions:
-      # `rake release` pushes the git tag only when it is missing; a published release already has it, so reading
-      # is enough (a missing tag makes the run stop before anything is pushed).
+      # The published release already has its tag, so reading is enough.
       contents: read
       id-token: write # lets RubyGems.org check that this run is the trusted publisher
     env:
@@ -39,4 +38,29 @@ jobs:
             echo "::error::The release tag $GITHUB_REF_NAME does not match the gem version $version."
             exit 1
           fi
-      - uses: rubygems/release-gem@7f9650160c1a4e7989fdc9855807bdbd421d8b6b # v1
+      # Trusted Publishing by hand: RubyGems.org now asks a gem's first push to name the account that will own it
+      # (`owner`, the account's immutable ID from its Pending Trusted Publishers page), and no release of
+      # rubygems/release-gem or configure-rubygems-credentials passes it yet. The exchange is the one those actions
+      # make (POST /api/v1/oidc/trusted_publisher/exchange_token with the GitHub OIDC token), plus `owner`.
+      # The key it answers with lives about an hour and is masked in the log.
+      - name: Exchange the GitHub OIDC token for a short-lived RubyGems.org key
+        env:
+          RUBYGEMS_OWNER_ID: "255565"
+        run: |
+          jwt="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=rubygems.org" | ruby -rjson -e 'print JSON.parse(STDIN.read).fetch("value")')"
+          echo "::add-mask::$jwt"
+          body="$(ruby -rjson -e 'print JSON.generate("jwt" => ARGV[0], "owner" => Integer(ARGV[1]))' "$jwt" "$RUBYGEMS_OWNER_ID")"
+          answer="$(curl -sS -w '\n%{http_code}' -X POST https://rubygems.org/api/v1/oidc/trusted_publisher/exchange_token -H 'Content-Type: application/json' --data-binary "$body")"
+          status="${answer##*$'\n'}"
+          json="${answer%$'\n'*}"
+          if [ "$status" != "201" ] && [ "$status" != "200" ]; then
+            echo "::error::RubyGems.org refused the token exchange (HTTP $status): $(printf '%s' "$json" | head -c 400)"
+            exit 1
+          fi
+          key="$(printf '%s' "$json" | ruby -rjson -e 'print JSON.parse(STDIN.read).fetch("rubygems_api_key")')"
+          echo "::add-mask::$key"
+          echo "GEM_HOST_API_KEY=$key" >> "$GITHUB_ENV"
+      - name: Build and push the gem
+        run: |
+          gem build smstunnel.gemspec
+          gem push "smstunnel-${GITHUB_REF_NAME#v}.gem"

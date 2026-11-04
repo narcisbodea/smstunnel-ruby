@@ -63,7 +63,7 @@ first, the pending publisher stops working. So do steps 1 to 3 and the first rel
    ```
 
 3. The **Release** workflow runs: the client tests, RuboCop, a check that the tag matches the gem version, then
-   `rubygems/release-gem` builds the gem and pushes it (after your approval, if you set reviewers).
+   The workflow exchanges its GitHub OIDC token for a short-lived key (naming the owner account, ID 255565, which RubyGems.org asks of a first push), builds the gem and pushes it (after your approval, if you set reviewers).
 4. Check <https://rubygems.org/gems/smstunnel> and try it in a fresh directory:
 
    ```bash
