@@ -49,7 +49,7 @@ jobs:
         run: |
           jwt="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=rubygems.org" | ruby -rjson -e 'print JSON.parse(STDIN.read).fetch("value")')"
           echo "::add-mask::$jwt"
-          body="$(ruby -rjson -e 'print JSON.generate("jwt" => ARGV[0], "owner" => Integer(ARGV[1]))' "$jwt" "$RUBYGEMS_OWNER_ID")"
+          body="$(ruby -rjson -e 'print JSON.generate("jwt" => ARGV[0], "owner" => ARGV[1])' "$jwt" "$RUBYGEMS_OWNER_ID")"
           answer="$(curl -sS -w '\n%{http_code}' -X POST https://rubygems.org/api/v1/oidc/trusted_publisher/exchange_token -H 'Content-Type: application/json' --data-binary "$body")"
           status="${answer##*$'\n'}"
           json="${answer%$'\n'*}"
