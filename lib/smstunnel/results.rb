@@ -62,7 +62,8 @@ module SMSTunnel
   # Shows the fields without +raw+, the whole answer.
   module CompactInspect # :nodoc:
     def inspect
-      fields = to_h.except(:raw).map { |name, value| "#{name}=#{value.inspect}" }.join(", ")
+      # members, not to_h: in the Enumerable results, Enumerable#to_h comes before Data#to_h.
+      fields = (members - [:raw]).map { |name| "#{name}=#{public_send(name).inspect}" }.join(", ")
       "#<data #{self.class.name} #{fields}>"
     end
     alias to_s inspect

@@ -176,6 +176,16 @@ class ClientTest < Minitest::Test
     assert_instance_of SMSTunnel::DeviceList, client.devices
   end
 
+  def test_lists_show_their_entries_in_inspect
+    stub_get("/api/v1/devices", { devices: [{ id: "phone-1", name: "Pixel", isOnline: true }], online: 1, total: 1 })
+
+    phones = client.phones
+
+    assert_includes phones.inspect, 'name="Pixel"'
+    assert_includes phones.inspect, "online_count=1"
+    refute_includes phones.inspect, "raw="
+  end
+
   def test_usage_reads_the_counters
     stub_get("/api/v1/account/usage",
              { plan: "pro", accountType: "standard", usage: { smsClean: 7, smsBranded: 0, twoFaClean: 2 },
