@@ -10,10 +10,10 @@ Gem::Specification.new do |spec|
 
   spec.summary = "Send texts from your own Ruby and Rails apps through your own Android phone, from your own number."
   spec.description = <<~TEXT.tr("\n", " ").strip
-    The SMSTunnel client for Ruby: send texts and sign-in codes, look up their status, list your phones, read the
-    texts your phone received. Standard library only, typed errors, idempotency keys for safe retries. For Rails: an
-    install generator (initializer and credentials), an Active Job that never sends twice, and a Noticed delivery
-    method.
+    The SMSTunnel client for Ruby: send texts and sign-in codes, schedule texts for later, look up their status,
+    list your phones, read the texts your phone received. Standard library only, typed errors, idempotency keys for
+    safe retries. For Rails: an install generator (initializer and credentials), an Active Job that never sends
+    twice, and a Noticed delivery method.
   TEXT
   spec.homepage = "https://smstunnel.io"
   spec.license = "MIT"

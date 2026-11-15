@@ -25,6 +25,9 @@ module SMSTunnel
   # - +message+ (required): the text.
   # - +device_id+, +default_country_code+: as for Client#send_sms; they default to SMSTunnel.configure.
   # - +sign_in_code+: +true+ sends the text as a sign-in code (Client#send_sign_in_code).
+  # - +send_at+: a Time 1 minute to 30 days ahead: SMSTunnel keeps the text and sends it then (Client#send_sms with
+  #   +send_at+). Not with +sign_in_code+. Noticed's own +wait+ and +wait_until+ hold the delivery in your queue
+  #   instead.
   # - +api_key+: a different account's key than SMSTunnel.configure's.
   # - +idempotency_key+: defaults to "noticed-<notification id>-<delivery method name>" ("noticed-<job id>" for
   #   ephemeral notifications), so a retried delivery never sends the text twice.
@@ -59,10 +62,13 @@ module SMSTunnel
         default_country_code: evaluate_option(:default_country_code),
         idempotency_key: idempotency_key
       }
+      send_at = evaluate_option(:send_at)
       if evaluate_option(:sign_in_code)
+        raise ArgumentError, "deliver_by :smstunnel: sign-in codes can't be scheduled (send_at)." unless send_at.nil?
+
         client.send_sign_in_code(phone, text, **options)
       else
-        client.send_sms(phone, text, **options)
+        client.send_sms(phone, text, **options, send_at: send_at)
       end
     end
 

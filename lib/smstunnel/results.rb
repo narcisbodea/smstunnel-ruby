@@ -77,6 +77,7 @@ module SMSTunnel
   # - +remaining+: what is left of today's quota, e.g. <tt>{"clean" => 95, "total" => "unlimited"}</tt>.
   # - #replayed?: +true+ when SMSTunnel answered from an earlier request with the same idempotency key, without
   #   sending again.
+  # - #scheduled?: +false+. A text sent with +send_at+ answers with a ScheduledSendResult instead.
   SendResult = Data.define(:message_id, :queued, :branded, :remaining, :replayed, :raw) do
     include CompactInspect
 
@@ -95,6 +96,79 @@ module SMSTunnel
     def queued? = queued
     def branded? = branded
     def replayed? = replayed
+    def scheduled? = false
+  end
+
+  # A text scheduled with Client#send_sms and +send_at+, as SMSTunnel keeps it.
+  #
+  # - +id+: for Client#scheduled_text and Client#cancel_scheduled_text.
+  # - +to+, +message+: the number as written, and the text.
+  # - +send_at+: when it goes out (a Time, UTC).
+  # - +status+: +scheduled+ (waiting for its time), +sent+ (handed to the phone), +failed+ or +canceled+.
+  # - +device_id+: the phone that sends it, or +nil+ when SMSTunnel picks one at that time.
+  # - +message_id+: once it went out, the text's id for Client#message_status (delivery); +nil+ until then.
+  # - +error+: why it failed, or +nil+: +key_not_active+ (the key was turned off, deleted or expired, or lost
+  #   +sms:send+), +limit_reached+ (the plan's daily allowance was used up at that time), +invalid_number+,
+  #   +phone_not_found+, +phone_unlinked+, +sealed_only_phone+, +number_not_allowed+, +account_not_active+,
+  #   +interrupted+ or +failed+.
+  # - +created_at+: when it was scheduled (a Time, UTC), or +nil+.
+  ScheduledText = Data.define(:id, :to, :message, :send_at, :status, :device_id, :message_id, :error, :created_at,
+                              :raw) do
+    include CompactInspect
+
+    def self.from_data(data)
+      new(
+        id: Fields.string(data, "id"),
+        to: Fields.string(data, "to"),
+        message: Fields.string(data, "message"),
+        send_at: Fields.time(data, "sendAt"),
+        status: Fields.string(data, "status"),
+        device_id: Fields.opt_string(data, "deviceId"),
+        message_id: Fields.opt_string(data, "messageId"),
+        error: Fields.opt_string(data, "error"),
+        created_at: Fields.time(data, "createdAt"),
+        raw: data
+      )
+    end
+
+    def scheduled? = status == "scheduled"
+    def sent? = status == "sent"
+    def failed? = status == "failed"
+    def canceled? = status == "canceled"
+
+    # +true+ while it waits for its time: it can still be canceled.
+    def waiting? = scheduled?
+
+    # +true+ once it went out, failed or was canceled.
+    def done? = %w[sent failed canceled].include?(status)
+  end
+
+  # SMSTunnel's answer to Client#send_sms with +send_at+: it keeps the text and sends it at +send_at+.
+  #
+  # - +scheduled_id+: the scheduled text's id, for Client#scheduled_text and Client#cancel_scheduled_text.
+  # - +send_at+: when it goes out (a Time, UTC).
+  # - +status+: +scheduled+.
+  # - +scheduled_text+: the whole ScheduledText.
+  # - #replayed?: +true+ when SMSTunnel answered from an earlier request with the same idempotency key, without
+  #   scheduling the text again.
+  # - #scheduled?: +true+ (a SendResult answers +false+).
+  ScheduledSendResult = Data.define(:scheduled_id, :send_at, :status, :scheduled_text, :replayed, :raw) do
+    include CompactInspect
+
+    def self.from_response(body, replayed: false)
+      text = ScheduledText.from_data(Fields.obj(body, "data"))
+      new(
+        scheduled_id: Fields.opt_string(body, "scheduledId") || text.id,
+        send_at: Fields.time(body, "sendAt") || text.send_at,
+        status: text.status.empty? ? "scheduled" : text.status,
+        scheduled_text: text,
+        replayed: replayed,
+        raw: body
+      )
+    end
+
+    def replayed? = replayed
+    def scheduled? = true
   end
 
   # Where a text is now.
@@ -237,5 +311,36 @@ module SMSTunnel
     def size = texts.size
     def empty? = texts.empty?
     def more? = has_more
+  end
+
+  # One page of the texts this API key scheduled (Client#scheduled_texts). It is Enumerable over ScheduledText
+  # objects; +total+ counts the texts on every page.
+  #
+  # - +waiting+: how many texts wait at once in the whole account (every key and the dashboard).
+  # - +max_waiting+: the plan's cap on them (Free 10, Starter 50, Standard 200, Professional 500, Enterprise 1000).
+  #   The API calls it +max+; that name would hide Enumerable#max here.
+  ScheduledTexts = Data.define(:texts, :total, :page, :limit, :waiting, :max_waiting, :raw) do
+    include CompactInspect
+    include Enumerable
+
+    def self.from_data(data)
+      texts = Fields.objs(data, "items").map { |item| ScheduledText.from_data(item) }.freeze
+      new(
+        texts: texts,
+        total: Fields.integer(data, "total", texts.size),
+        page: Fields.integer(data, "page", 1),
+        limit: Fields.integer(data, "limit"),
+        waiting: Fields.integer(data, "waiting"),
+        max_waiting: Fields.opt_integer(data, "max"),
+        raw: data
+      )
+    end
+
+    def each(&) = texts.each(&)
+    def size = texts.size
+    def empty? = texts.empty?
+
+    # +true+ when a next page has more texts (ask for +page: page + 1+).
+    def more? = limit.positive? && page * limit < total
   end
 end

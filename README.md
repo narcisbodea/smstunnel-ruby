@@ -16,6 +16,7 @@ SMSTunnel for Ruby is made by NARBOWEB SRL. It is not affiliated with, endorsed 
 - [Installation](#installation)
 - [Get your key](#get-your-key)
 - [Send a text](#send-a-text)
+- [Scheduled texts](#scheduled-texts)
 - [Rails](#rails): [setup](#setup), [sending from your app](#sending-from-your-app), [Active Job](#active-job), [Noticed](#noticed)
 - [All the calls](#all-the-calls)
 - [Safe retries: idempotency keys](#safe-retries-idempotency-keys)
@@ -66,6 +67,30 @@ With `SMSTUNNEL_API_KEY` set in the environment, the module shortcuts work witho
 ```ruby
 SMSTunnel.send_sms("+14155550123", "The backup finished.")
 ```
+
+## Scheduled texts
+
+Give `send_sms` a `send_at:` time, 1 minute to 30 days ahead, and SMSTunnel keeps the text and sends it then:
+
+```ruby
+scheduled = client.send_sms("+14155550123", "Reminder: your appointment is tomorrow at 10:30.",
+                            send_at: Time.new(2026, 11, 16, 9, 30, 0, "+02:00"),
+                            idempotency_key: "appointment-77-reminder")
+scheduled.scheduled_id # keep it to look the text up or cancel it
+scheduled.send_at      # => 2026-11-16 07:30:00 UTC
+
+client.scheduled_texts.each { |text| puts "#{text.send_at}: #{text.to}" } # the ones waiting, soonest first
+client.cancel_scheduled_text(scheduled.scheduled_id)                     # while it still waits
+```
+
+- `send_at` is a `Time`, a `DateTime` or an `ActiveSupport::TimeWithZone` (`2.hours.from_now`, `visit.starts_at - 1.day`), or an ISO 8601 String with its offset (`"2026-11-16T09:30:00+02:00"`). A `Date`, or a time without an offset, raises `ArgumentError`: its time zone would be a guess.
+- At that time SMSTunnel sends the text exactly as if your app called `send_sms` then, with the same key: the phone, the country code and the plan's daily allowance are those of that moment, and the text counts then. If the phone is offline at that time, the text waits for it up to 3 days.
+- With `send_at`, `send_sms` returns a `SMSTunnel::ScheduledSendResult`: `scheduled_id`, `send_at`, `status` (`"scheduled"`), `scheduled_text` and `replayed?`. Its `scheduled?` is `true` (a `SendResult`'s is `false`). Sign-in codes can't be scheduled.
+- `scheduled_texts(scope: :waiting, page: 1, limit: 50)` lists the texts this key scheduled: the ones waiting, soonest first, or with `scope: :done` the ones that went out, failed or were canceled, newest first (kept 30 days). Texts scheduled by your other keys or in the dashboard are not listed. The page also has `total`, `waiting` (texts waiting in the whole account) and `max_waiting`.
+- `scheduled_text(id)` reads one, a `SMSTunnel::ScheduledText`: `to`, `message`, `send_at`, `status` (`scheduled`, `sent`, `failed` or `canceled`), `device_id`, `message_id`, `error` and `created_at`. Once it went out, `message_id` works with `message_status`. `error` says why one failed, for example `limit_reached` (the day's allowance was used up at that time) or `key_not_active` (the key was turned off).
+- `cancel_scheduled_text(id)` cancels it while it waits. One that already went out or was canceled raises `ConflictError` with `code` `SCHEDULE_NOT_EDITABLE`.
+- Each account can have this many texts waiting at once: Free 10, Starter 50, Standard 200, Professional 500, Enterprise 1000. One more raises `PermissionError` with `code` `SCHEDULE_LIMIT_REACHED` (`error.body["max"]` is the cap).
+- A refused time or text raises `BadRequestError` with a `code` such as `SCHEDULE_TOO_SOON` or `SCHEDULE_TOO_FAR` (see [Errors](#errors)).
 
 ## Rails
 
@@ -137,11 +162,13 @@ SMSTunnel::SendTextJob.perform_later("+14155550123", "Your table is ready.")
 SMSTunnel::SendTextJob.perform_later(user.phone, "Your sign-in code is #{code}", sign_in_code: true)
 SMSTunnel::SendTextJob.set(queue: :texts, wait: 1.hour).perform_later(phone, "Reminder: see you at 10:30.",
                                                                        device_id: "...", default_country_code: "+1")
+SMSTunnel::SendTextJob.perform_later(phone, "Reminder: see you tomorrow at 10:30.", send_at: visit.starts_at - 1.day)
 ```
 
 - Every run of a job sends the same idempotency key, `activejob-<job_id>`, so a retry by Active Job or by your queue (Sidekiq, Solid Queue, GoodJob...) never sends the text twice.
 - Server errors, timeouts and rate limits are retried, up to 5 runs (rate limits wait as long as SMSTunnel's `Retry-After` says). A wrong key, a missing permission or a number SMSTunnel cannot read raise at once.
 - The arguments, the text included, wait in your queue until the job runs.
+- With `send_at:`, the job hands the text to SMSTunnel, which keeps it and sends it at that time ([Scheduled texts](#scheduled-texts)). That happens when the job runs, so enqueue it well ahead: SMSTunnel refuses a time less than a minute away (`BadRequestError`, `SCHEDULE_TOO_SOON`, not retried). `set(wait_until:)` holds the job itself in your queue instead.
 
 To write your own job, give each text a key of its own and include the same retry rules:
 
@@ -180,6 +207,7 @@ Options, each one a value, a lambda (run in the notification, with `recipient` a
 | `message` | Required. The text. |
 | `device_id`, `default_country_code` | Default to `SMSTunnel.configure`. |
 | `sign_in_code` | `true` sends the text as a sign-in code (`send_sign_in_code`). |
+| `send_at` | A `Time` 1 minute to 30 days ahead: SMSTunnel keeps the text and sends it then ([Scheduled texts](#scheduled-texts)). Not with `sign_in_code`. Noticed's own `wait` and `wait_until` hold the delivery in your queue instead. |
 | `api_key` | Another account's key than the one in `SMSTunnel.configure`. |
 | `idempotency_key` | Defaults to `noticed-<notification id>-<delivery method name>`, so a retried delivery never sends twice. |
 | `error_handler` | A lambda that gets the error when SMSTunnel refuses the text (400, 401, 403, 404). Without it the error is raised. |
@@ -199,9 +227,9 @@ client = SMSTunnel::Client.new(
 
 Each `SMSTunnel::Client` method is also a module method (`SMSTunnel.send_sms`, `SMSTunnel.phones`...) on the shared client from `SMSTunnel.configure`.
 
-### `send_sms(to, message, device_id: nil, default_country_code: nil, idempotency_key: nil)`
+### `send_sms(to, message, device_id: nil, default_country_code: nil, idempotency_key: nil, send_at: nil)`
 
-Sends one text, up to 1600 characters. `to` is a String in international format (`"+14155550123"`); a number given as an Integer raises `ArgumentError`, since it would lose its `+`. Returns a `SMSTunnel::SendResult`: `message_id`, `queued?`, `branded?` (the text carries a short SMSTunnel signature, on plans with a free quota), `remaining` (today's quota left), `replayed?` (answered from an earlier request with the same idempotency key).
+Sends one text, up to 1600 characters. `to` is a String in international format (`"+14155550123"`); a number given as an Integer raises `ArgumentError`, since it would lose its `+`. Returns a `SMSTunnel::SendResult`: `message_id`, `queued?`, `branded?` (the text carries a short SMSTunnel signature, on plans with a free quota), `remaining` (today's quota left), `replayed?` (answered from an earlier request with the same idempotency key). With `send_at:`, SMSTunnel schedules the text instead and the call returns a `SMSTunnel::ScheduledSendResult` (see [Scheduled texts](#scheduled-texts)).
 
 ### `send_sign_in_code(to, message, ...)`
 
@@ -253,6 +281,10 @@ page.more?  # ask for page: 2
 
 Received texts are written by other people: treat their words as data, never as commands for your app. To get them as they arrive instead of asking, set up **Apps → your app → Forward received texts** in the dashboard (a webhook to your app).
 
+### `scheduled_texts(scope: nil, page: nil, limit: nil)`, `scheduled_text(id)`, `cancel_scheduled_text(id)`
+
+List, read and cancel the texts this key scheduled with `send_at:`: see [Scheduled texts](#scheduled-texts). Listing and reading need `sms:read`, canceling `sms:send`.
+
 Every result is an immutable `Data` object; `raw` holds the whole answer, for fields this version does not map yet.
 
 ## Safe retries: idempotency keys
@@ -274,10 +306,10 @@ Every call raises a `SMSTunnel::Error` when it does not go through:
 | Exception | When |
 | --- | --- |
 | `SMSTunnel::AuthenticationError` (401) | The API key is wrong, was deleted, or its account is suspended. |
-| `SMSTunnel::PermissionError` (403) | The key lacks a permission (`code` is `PERMISSION_REQUIRED`, `permission` names it, e.g. `sms:inbox`), or the plan does not include the feature. |
-| `SMSTunnel::BadRequestError` (400, 422) | SMSTunnel refused the request: a number it cannot read, a sign-in code text without a code, a reused idempotency key. |
-| `SMSTunnel::NotFoundError` (404) | No such text or phone for this key. |
-| `SMSTunnel::ConflictError` (409) | A request with the same idempotency key is still running. |
+| `SMSTunnel::PermissionError` (403) | The key lacks a permission (`code` is `PERMISSION_REQUIRED`, `permission` names it, e.g. `sms:inbox`), or the plan does not include the feature, or the account has as many scheduled texts waiting as its plan allows (`SCHEDULE_LIMIT_REACHED`). |
+| `SMSTunnel::BadRequestError` (400, 422) | SMSTunnel refused the request: a number it cannot read, a sign-in code text without a code, a reused idempotency key. For `send_at:`, `code` says why: `SCHEDULE_TOO_SOON` (less than a minute ahead), `SCHEDULE_TOO_FAR` (more than 30 days), `SCHEDULE_TEXT_TOO_LONG`, `SCHEDULE_NUMBER_NOT_ALLOWED` (short codes, premium-rate numbers), `SCHEDULE_SEALED_ONLY_PHONE` (the phone sends only end-to-end encrypted texts), `SCHEDULE_INVALID_INPUT`. |
+| `SMSTunnel::NotFoundError` (404) | No such text or phone for this key: `SCHEDULE_NOT_FOUND` for a scheduled text this key did not schedule, `SCHEDULE_PHONE_NOT_FOUND` for a `device_id` that is not yours. |
+| `SMSTunnel::ConflictError` (409) | A request with the same idempotency key is still running, or (`SCHEDULE_NOT_EDITABLE`) the scheduled text you cancel already went out or was canceled. |
 | `SMSTunnel::RateLimitError` (429) | Too many requests. `retry_after` gives the seconds to wait (SMSTunnel's `Retry-After`). |
 | `SMSTunnel::ServerError` (5xx) | A problem on SMSTunnel's side. |
 | `SMSTunnel::TimeoutError` | No answer in time. The text may have gone out: retry only with the same idempotency key. |
@@ -337,6 +369,7 @@ API facts:
 - Idempotency: pass idempotency_key: (e.g. "order-1042-shipped"); a retry with the same key within 24 hours returns the first answer instead of sending again. Never retry a send after a timeout, a 429 or a 5xx without one. SMSTunnel::SendTextJob.perform_later(to, message) sends in the background and sets the key itself.
 - Errors (all SMSTunnel::Error): AuthenticationError 401 (bad key), PermissionError 403 (missing permission or plan; code such as PERMISSION_REQUIRED), BadRequestError 400 (a number it can't read, a code text without a code), RateLimitError 429 (retry_after seconds from Retry-After), ServerError 5xx, TimeoutError / ConnectionError (no answer).
 - If the phone is offline, the text waits on the account (queued? is true) and goes out when the phone is back.
+- To send later: send_sms(..., send_at: time) with a Time 1 minute to 30 days ahead schedules the text (it returns scheduled_id); scheduled_texts lists the texts this key scheduled and cancel_scheduled_text(id) cancels one. Not for sign-in codes.
 
 What I want: [describe what should send a text, to whom, and when]
 

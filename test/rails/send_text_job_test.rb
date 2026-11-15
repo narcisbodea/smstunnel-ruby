@@ -29,6 +29,54 @@ class SendTextJobTest < RailsTestCase
                      headers: { "Idempotency-Key" => "login-42" })
   end
 
+  test "send_at schedules the text, with the job's idempotency key" do
+    stub_send(body: scheduled_answer)
+    job = SMSTunnel::SendTextJob.new("+14155550123", "Your appointment is tomorrow at 10:00.",
+                                     send_at: Time.utc(2026, 11, 16, 8))
+
+    result = job.perform_now
+
+    assert_instance_of SMSTunnel::ScheduledSendResult, result
+    assert_equal SCHEDULED_ID, result.scheduled_id
+    assert_requested(:post, url("/api/v1/sms/send"),
+                     body: { "to" => "+14155550123", "message" => "Your appointment is tomorrow at 10:00.",
+                             "sendAt" => "2026-11-16T08:00:00Z" },
+                     headers: { "Idempotency-Key" => "activejob-#{job.job_id}" })
+  end
+
+  test "send_at goes through the queue with its time zone" do
+    stub_send(body: scheduled_answer)
+    send_at = Time.utc(2026, 11, 16, 8).in_time_zone("Europe/Bucharest")
+
+    perform_enqueued_jobs { SMSTunnel::SendTextJob.perform_later("+14155550123", "Reminder", send_at: send_at) }
+
+    assert_requested(:post, url("/api/v1/sms/send")) do |request|
+      sent_body(request)["sendAt"] == "2026-11-16T10:00:00+02:00"
+    end
+  end
+
+  test "a retried scheduled send carries the same key and the same time" do
+    ok = { status: 200, body: scheduled_answer, headers: JSON_HEADERS }
+    stub_request(:post, url("/api/v1/sms/send")).to_return({ status: 503, body: "Unavailable" }, ok)
+
+    perform_enqueued_jobs do
+      SMSTunnel::SendTextJob.perform_later("+14155550123", "Reminder", send_at: Time.utc(2026, 11, 16, 8))
+    end
+
+    assert_requested :post, url("/api/v1/sms/send"), times: 2
+    assert_equal 1, sent_idempotency_keys.size
+  end
+
+  test "a sign-in code can't be scheduled" do
+    error = assert_raises(ArgumentError) do
+      SMSTunnel::SendTextJob.perform_now("+14155550123", "Your sign-in code is 482913",
+                                         sign_in_code: true, send_at: Time.utc(2026, 11, 16, 8))
+    end
+
+    assert_match(/can't be scheduled/, error.message)
+    assert_not_requested :post, url("/api/v1/sms/send-2fa")
+  end
+
   test "a retry after a server error carries the same idempotency key" do
     stub_request(:post, url("/api/v1/sms/send"))
       .to_return({ status: 503, body: "Unavailable" }, { status: 200, body: send_answer, headers: JSON_HEADERS })

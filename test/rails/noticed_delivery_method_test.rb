@@ -30,6 +30,23 @@ class SignInCodeNotifier < Noticed::Event
   end
 end
 
+class AppointmentScheduledNotifier < Noticed::Event
+  deliver_by :smstunnel do |config|
+    config.phone = -> { recipient.phone }
+    config.message = "Reminder: your appointment is today at 10:00."
+    config.send_at = -> { Time.utc(2026, 11, 16, params[:hour]) }
+  end
+end
+
+class ScheduledSignInCodeNotifier < Noticed::Event
+  deliver_by :smstunnel do |config|
+    config.phone = -> { recipient.phone }
+    config.message = "Your sign-in code is 482913"
+    config.sign_in_code = true
+    config.send_at = -> { Time.utc(2026, 11, 16, 8) }
+  end
+end
+
 class HandledErrorNotifier < Noticed::Event
   ERRORS = [] # rubocop:disable Style/MutableConstant
 
@@ -88,6 +105,26 @@ class NoticedDeliveryMethodTest < RailsTestCase
     assert_requested(:post, url("/api/v1/sms/send-2fa"), headers: { "X-API-Key" => "sk_test_other_account" },
                                                          body: { "to" => "+14155550123",
                                                                  "message" => "Your sign-in code is 482913" }.to_json)
+  end
+
+  test "send_at schedules the text with SMSTunnel, with the notification's key" do
+    stub_send(body: scheduled_answer)
+
+    perform_enqueued_jobs { AppointmentScheduledNotifier.with(hour: 8).deliver(@user) }
+
+    assert_requested(:post, url("/api/v1/sms/send"),
+                     body: { "to" => "+14155550123", "message" => "Reminder: your appointment is today at 10:00.",
+                             "sendAt" => "2026-11-16T08:00:00Z" },
+                     headers: { "Idempotency-Key" => "noticed-#{Noticed::Notification.last.id}-smstunnel" })
+  end
+
+  test "a sign-in code can't be scheduled" do
+    perform_enqueued_jobs do
+      error = assert_raises(ArgumentError) { ScheduledSignInCodeNotifier.with({}).deliver(@user) }
+
+      assert_match(/can't be scheduled/, error.message)
+    end
+    assert_not_requested :post, url("/api/v1/sms/send-2fa")
   end
 
   test "an error handler gets the errors SMSTunnel refused the text with" do

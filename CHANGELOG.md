@@ -3,6 +3,27 @@
 All notable changes to `smstunnel` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-11-15
+
+### Added
+
+- Scheduled texts: `send_sms(..., send_at:)` with a `Time`, `DateTime`, `ActiveSupport::TimeWithZone` or an ISO 8601
+  String with its offset, 1 minute to 30 days ahead. SMSTunnel keeps the text and sends it then, as if it were sent
+  at that moment with the same key. The call returns a `SMSTunnel::ScheduledSendResult` (`scheduled_id`, `send_at`,
+  `status`, `scheduled_text`, `replayed?`); a `Date` or a time without an offset raises `ArgumentError`. The
+  idempotency key works as for any send. `SendResult#scheduled?` is `false`, `ScheduledSendResult#scheduled?` `true`.
+- `scheduled_texts(scope:, page:, limit:)` (a `SMSTunnel::ScheduledTexts` page with `total`, `waiting` and
+  `max_waiting`), `scheduled_text(id)` and `cancel_scheduled_text(id)`, each returning `SMSTunnel::ScheduledText`;
+  also as module shortcuts (`SMSTunnel.scheduled_texts`...).
+- `send_at:` on `SMSTunnel::SendTextJob` and a `send_at` option for `deliver_by :smstunnel` (Noticed).
+- The `SCHEDULE_*` error codes in the docs of `BadRequestError`, `PermissionError`, `NotFoundError` and
+  `ConflictError`; `error.code` carries them.
+
+### Fixed
+
+- `inspect` of `DeviceList` and `ReceivedTexts` (and the new `ScheduledTexts`) raised `TypeError` when the page had
+  entries: `Enumerable#to_h` came before `Data#to_h`.
+
 ## [1.0.0] - 2026-11-03
 
 ### Added
@@ -23,4 +44,5 @@ All notable changes to `smstunnel` are documented here. The format follows
   credentials); `SMSTunnel::SendTextJob`, an Active Job whose retries never send twice; `SMSTunnel::JobRetries` for
   your own jobs; `deliver_by :smstunnel` for Noticed 2.9 and 3 (`SMSTunnel::NoticedDeliveryMethod`).
 
+[1.1.0]: https://github.com/narcisbodea/smstunnel-ruby/releases/tag/v1.1.0
 [1.0.0]: https://github.com/narcisbodea/smstunnel-ruby/releases/tag/v1.0.0

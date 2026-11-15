@@ -80,6 +80,15 @@ module SMSTunnel
 
     # See Client#received_texts.
     def received_texts(...) = client.received_texts(...)
+
+    # See Client#scheduled_texts.
+    def scheduled_texts(...) = client.scheduled_texts(...)
+
+    # See Client#scheduled_text.
+    def scheduled_text(...) = client.scheduled_text(...)
+
+    # See Client#cancel_scheduled_text.
+    def cancel_scheduled_text(...) = client.cancel_scheduled_text(...)
   end
 end
 

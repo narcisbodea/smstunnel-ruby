@@ -104,6 +104,11 @@ module SMSTunnel
   # 400 or 422: SMSTunnel refused the request, for example a number it cannot read, a sign-in code text without a
   # code (+No valid verification code found+), or an idempotency key reused for a different text
   # (+IDEMPOTENCY_KEY_REUSED+). Fix the request; retrying it unchanged gets the same answer.
+  #
+  # For a text with +send_at+, +code+ says why: +SCHEDULE_TOO_SOON+ (less than a minute ahead), +SCHEDULE_TOO_FAR+
+  # (more than 30 days), +SCHEDULE_TEXT_TOO_LONG+, +SCHEDULE_NUMBER_NOT_ALLOWED+ (short codes, premium-rate
+  # numbers), +SCHEDULE_SEALED_ONLY_PHONE+ (the phone sends only end-to-end encrypted texts) or
+  # +SCHEDULE_INVALID_INPUT+. A server without scheduled texts answers "property sendAt should not exist".
   class BadRequestError < APIError; end
 
   # 401: the API key is wrong, was deleted or expired, or its account is suspended. Check it in your SMSTunnel
@@ -111,14 +116,18 @@ module SMSTunnel
   class AuthenticationError < APIError; end
 
   # 403: the key is valid but may not do this. Either it lacks a permission (+code+ is +PERMISSION_REQUIRED+ and
-  # #permission names it, e.g. +sms:inbox+ for received texts), or the plan does not include the feature.
+  # #permission names it, e.g. +sms:inbox+ for received texts), or the plan does not include the feature. With
+  # +code+ +SCHEDULE_LIMIT_REACHED+, the account has as many scheduled texts waiting as its plan allows
+  # (<tt>body["max"]</tt>): wait until some go out, or cancel one.
   class PermissionError < APIError; end
 
-  # 404: no such text or phone for this key.
+  # 404: no such text or phone for this key; +SCHEDULE_NOT_FOUND+ for a scheduled text this key did not schedule,
+  # +SCHEDULE_PHONE_NOT_FOUND+ for a +device_id+ that is not one of the account's phones.
   class NotFoundError < APIError; end
 
   # 409: a request with the same idempotency key is still being processed (+IDEMPOTENCY_KEY_IN_PROGRESS+). Retry in
-  # a moment with the same key to get its result.
+  # a moment with the same key to get its result. With +SCHEDULE_NOT_EDITABLE+, the scheduled text you tried to
+  # cancel already went out or was canceled: don't retry.
   class ConflictError < APIError; end
 
   # 429: too many requests (sending allows 30 a minute per key) or a daily limit is reached. Wait #retry_after
