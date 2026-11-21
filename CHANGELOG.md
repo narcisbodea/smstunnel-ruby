@@ -3,6 +3,19 @@
 All notable changes to `smstunnel` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-11-21
+
+### Fixed
+
+- `MessageStatus#final?` is now `true` for `sent`. The SMSTunnel app gets no delivery reports, so a text that went out
+  stays `sent`, and code waiting "until final" never stopped. `sent` is the last good status today; `delivered` is
+  reserved and still counts as final. `pending` and states this version doesn't know are still not final.
+- The docs no longer promise a delivery confirmation.
+
+### Compatibility
+
+- Only `final?` changes. If your code waits for `final?` and then looks for `delivered?`, treat `sent?` as success too.
+
 ## [1.1.0] - 2026-11-15
 
 ### Added
@@ -44,5 +57,6 @@ All notable changes to `smstunnel` are documented here. The format follows
   credentials); `SMSTunnel::SendTextJob`, an Active Job whose retries never send twice; `SMSTunnel::JobRetries` for
   your own jobs; `deliver_by :smstunnel` for Noticed 2.9 and 3 (`SMSTunnel::NoticedDeliveryMethod`).
 
+[1.1.1]: https://github.com/narcisbodea/smstunnel-ruby/releases/tag/v1.1.1
 [1.1.0]: https://github.com/narcisbodea/smstunnel-ruby/releases/tag/v1.1.0
 [1.0.0]: https://github.com/narcisbodea/smstunnel-ruby/releases/tag/v1.0.0

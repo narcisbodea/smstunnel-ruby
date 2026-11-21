@@ -154,6 +154,19 @@ class ClientTest < Minitest::Test
     refute_predicate status, :failed?
   end
 
+  def test_final_for_every_state
+    expected = { "pending" => false, "sent" => true, "delivered" => true, "failed" => true, "unconfirmed" => true,
+                 "queued" => false, "read-by-martians" => false }
+
+    expected.each do |state, final|
+      [{ "status" => state }, { "status" => "pending", "deliveryStatus" => state }].each do |data|
+        status = SMSTunnel::MessageStatus.from_data({ "id" => "msg_1" }.merge(data))
+
+        assert_equal final, status.final?, data.inspect
+      end
+    end
+  end
+
   def test_message_status_needs_an_id
     assert_raises(ArgumentError) { client.message_status(" ") }
   end

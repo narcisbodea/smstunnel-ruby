@@ -245,10 +245,12 @@ client.send_sign_in_code("+14155550123", "Your sign-in code is 482913")
 status = client.message_status(result.message_id)
 status.state         # "pending", "sent", "delivered", "failed" or "unconfirmed"
 status.delivered?    # also pending?, sent?, failed?, unconfirmed?
-status.final?        # true once it will not change any more
+status.final?        # true once there is nothing more to wait for: sent, delivered, failed or unconfirmed
 status.sent_at       # a Time (UTC), or nil
 status.error_message # why it failed, or nil
 ```
+
+`sent` is the last good status today: the SMSTunnel app gets no delivery reports, so a text that went out stays `sent`. `delivered` is reserved.
 
 `unconfirmed`: the phone handed the text to its SIM but got no confirmation. It is final; SMSTunnel never sends it again.
 

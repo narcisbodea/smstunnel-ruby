@@ -106,7 +106,7 @@ module SMSTunnel
   # - +send_at+: when it goes out (a Time, UTC).
   # - +status+: +scheduled+ (waiting for its time), +sent+ (handed to the phone), +failed+ or +canceled+.
   # - +device_id+: the phone that sends it, or +nil+ when SMSTunnel picks one at that time.
-  # - +message_id+: once it went out, the text's id for Client#message_status (delivery); +nil+ until then.
+  # - +message_id+: once it went out, the text's id for Client#message_status (its status); +nil+ until then.
   # - +error+: why it failed, or +nil+: +key_not_active+ (the key was turned off, deleted or expired, or lost
   #   +sms:send+), +limit_reached+ (the plan's daily allowance was used up at that time), +invalid_number+,
   #   +phone_not_found+, +phone_unlinked+, +sealed_only_phone+, +number_not_allowed+, +account_not_active+,
@@ -173,7 +173,9 @@ module SMSTunnel
 
   # Where a text is now.
   #
-  # - +status+: +pending+, +sent+, +delivered+ or +failed+ (an unconfirmed text shows as +failed+).
+  # - +status+: +pending+, +sent+, +delivered+ or +failed+ (an unconfirmed text shows as +failed+). +sent+ is the last
+  #   good status today: the app gets no delivery reports, so a text that went out stays +sent+. +delivered+ is
+  #   reserved.
   # - +delivery_status+: the real state, which can also be +unconfirmed+: handed to the SIM, but the phone got no
   #   confirmation. Final: SMSTunnel never retries it.
   # - #state: +delivery_status+ when SMSTunnel sends it, otherwise +status+.
@@ -202,8 +204,9 @@ module SMSTunnel
     def failed? = state == "failed"
     def unconfirmed? = unconfirmed || state == "unconfirmed"
 
-    # +true+ once the text will not change any more: delivered, failed or unconfirmed.
-    def final? = %w[delivered failed unconfirmed].include?(state)
+    # +true+ once there is nothing more to wait for: sent, delivered, failed or unconfirmed. A text the phone sent
+    # stays +sent+, because the app gets no delivery reports.
+    def final? = %w[sent delivered failed unconfirmed].include?(state)
   end
 
   # A phone linked to your SMSTunnel account. Pass its +id+ as +device_id:+ to send through it.
